@@ -5,7 +5,7 @@ output:
     css: css_script.css
     orientation: columns
     vertical_layout: fill
-    source_code: https://github.com/Chhr1s/Progression-of-EDLD-652-Final/blob/main/docs/index.Rmd
+    source_code: https://github.com/Chhr1s/Progression-of-EDLD-652-Final/blob/master/docs/index.Rmd
 ---
 
 ```{r setup, include=F}
