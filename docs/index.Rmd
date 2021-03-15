@@ -1,0 +1,351 @@
+---
+title: "Progression of Plots"
+output: 
+  flexdashboard::flex_dashboard:
+    css: css_script.css
+    orientation: columns
+    vertical_layout: fill
+    source_code: https://github.com/Chhr1s/Progression-of-EDLD-652-Final/blob/main/docs/index.Rmd
+---
+
+```{r setup, include=F}
+knitr::opts_chunk$set(
+  message = F,
+	echo = F,
+	warning = F,
+	include = T
+)
+
+library(tidyverse)
+library(rio)
+library(here)
+library(sf)
+library(leaidr)
+library(tigris)
+library(glmertree)
+library(plotly)
+library(colorblindr)
+library(ggparty)
+library(gganimate)
+options(tigris_use_cache = TRUE)
+options(tigris_class = "sf")
+```
+
+```{r, echo = F}
+dat_imp <- import(here('Data', 'Imputed.csv')) %>% 
+  select(-contains('...'))
+
+dat_final <- dat_imp %>%
+  mutate(harsh_ps = harsh/total, 
+         harsh_per_100 = harsh_ps*100, 
+         perc_non_white = 100-perc_white, 
+         district = factor(district),
+         school_name = factor(school_name)) %>% 
+  group_by(district) %>% 
+  mutate(district_size = sum(total, na.rm = T),
+         d_black = sum(total*perc_black, na.rm = T)/district_size,
+         d_hisp = sum(total*perc_hisp, na.rm = T)/district_size,
+         d_non_white = sum(total*perc_non_white, na.rm = T)/district_size,
+         d_white = sum(total*perc_white, na.rm = T)/district_size,
+         d_esol = sum(total*perc_esol, na.rm = T)/district_size,
+         d_migrant = sum(total*perc_migrant, na.rm = T)/district_size,
+         d_frl = sum(total*perc_frl, na.rm = T)/district_size,
+         d_harsh = sum(harsh, na.rm = T)/district_size) %>%
+  ungroup()
+
+dat_long <- dat_final %>%
+  pivot_longer(contains('perc'),
+               names_to = 'school_demos',
+               names_prefix = 'perc_',
+               values_to = 'percents')
+```
+
+```{r, echo = F}
+comparison_schools <-
+  dat_final %>%
+  mutate(harsh_10 = ntile(harsh_ps, 10)) %>%
+  filter(harsh_10 %in% c(1,10)) %>%
+  mutate(category = if_else(harsh_10 == 1, 'Fewest', 'Most')) %>% 
+  select(-district, 
+         -contains('non_white'),
+         -district_size, 
+         -school_name, 
+         -fac_schtype,
+         -starts_with('d_')) %>% 
+  pivot_longer(starts_with('perc_'),
+               names_to = 'demographics', 
+               names_prefix = 'perc_',
+               values_to = 'percent') 
+```
+
+Progression of Figure 1 
+===
+
+```{r, echo = F}
+
+GA_1 <- maptools::readShapeSpatial(here::here('Data', 'GA_map.shp'))
+
+# GA_sf <- 
+#   lea_get(state = 'GA') %>%
+
+GA_sf <- GA_1 %>% 
+  st_as_sf() %>% 
+  mutate(district = 
+           str_replace(string = NAME, 
+                       pattern = " District", ""), 
+         district = 
+           str_replace(string = district, 
+                       pattern = " Schools", ""), 
+         district = 
+           str_replace(string = district, 
+                       pattern = " School", "")
+         )
+
+dat_district <- 
+  dat_final %>% 
+  select(district, district_size, starts_with('d_')) %>% 
+  unique()
+
+GA_districts <- 
+  GA_sf %>% 
+  left_join(dat_district) %>% 
+  mutate(harsh_qt = factor(ntile(d_harsh, 5)), 
+         black_qt = factor(ntile(d_black, 5)))
+```
+
+Column {data-width=1000, .tabset}
+---------------
+
+### First
+
+```{r}
+GA_districts %>% 
+  ggplot(aes(geometry = geometry)) + 
+  geom_sf(aes(fill = d_harsh)) +
+  labs(fill = 'Harsh Punishments per Student',
+       title = 'Distribution Harsh Punishments per Student') 
+
+```
+
+### Second
+
+```{r}
+GA_districts %>% 
+  ggplot(aes(geometry = geometry)) + 
+  geom_sf(aes(fill = d_harsh)) +
+  scale_fill_distiller(palette = "Blues", direction = -1) + 
+  theme_void()  +
+  theme(legend.position = 'bottom') +
+  labs(fill = 'Harsh Punishments per Student',
+       title = 'Distribution Harsh Punishments per Student') 
+```
+
+
+### Final
+
+Omitted to keep file under GitHub file size limit. See github for [final](https://chhr1s.github.io/GA_DOE_Public/index.html).
+
+Note that there is an [issue with the `{plotly}`](https://github.com/ropensci/plotly/issues/1049) where the continuous legends plot vertically no matter if you use the `layout(legend = list(orientation = 'h'))` or not. Categorical legends will print there, but not continuous legends (or, as they call them "colorways").
+
+Progression of Figure 2
+===
+
+Column {data-width=1000, .tabset}
+---------------
+
+### First
+
+```{r}
+comparison_schools %>% 
+  ggplot(aes(x = demographics, 
+             y = percent)) + 
+  geom_jitter(aes(color = category)) +
+  theme_minimal() 
+```
+
+### Second
+
+```{r}
+comparison_schools %>% 
+  ggplot(aes(y = 
+               fct_reorder(demographics, percent), 
+             x = percent)) + 
+  geom_jitter(aes(color = category, 
+                  shape = category), 
+              alpha = 0.6) + 
+  scale_y_discrete(breaks = c(
+    'black', 
+    'frl', 
+    'white',
+    'hisp', 
+    'esol', 
+    'migrant'
+  ),
+    labels = c(
+    'Black', 
+    'FRL',
+    'White', 
+    'Hispanic', 
+    'ESOL',
+    'Migrant'
+  )) +
+  theme_minimal() 
+```
+
+### Third
+
+```{r}
+school_plot <- 
+comparison_schools %>% 
+  ggplot(aes(y = 
+               fct_reorder(demographics, percent), 
+             x = percent)) + 
+  geom_jitter(aes(color = category, 
+                  shape = category), 
+              size = 2,
+              width = 0,
+              alpha = 0.6) + 
+  lims(x = c(0,100)) +
+  scale_x_continuous(labels = scales::percent_format(scale = 1)) +
+  scale_y_discrete(breaks = c(
+    'black', 
+    'frl', 
+    'white',
+    'hisp', 
+    'esol', 
+    'migrant'
+  ),
+    labels = c(
+    'Black', 
+    'FRL',
+    'White', 
+    'Hispanic', 
+    'ESOL',
+    'Migrant'
+  )) +
+  labs(x = 'Percent of School', 
+       y = '', 
+       color = 'Harsh Punishments per Student', 
+       shape = 'Harsh Punishments per Student', 
+       caption = 'Most = top 10%; Least = bottom 10%') +
+  theme_minimal() + 
+  scale_color_OkabeIto()
+school_plot
+```
+
+### Final
+
+Omitted to keep file under GitHub file size limit. See github for [final](https://chhr1s.github.io/GA_DOE_Public/index.html).
+
+Progression of Figure 3  
+===
+
+Column {data-width=1000, .tabset}
+---------------
+
+```{r echo = F}
+lmertree_TA <- dat_final %>% 
+  mutate(`% Black` = perc_black, 
+         `School Type` = factor(fac_schtype, 
+                                 levels =c('E', 'M', 'H', 'K12'), 
+                                 labels =c('E', 'M', 'H', 'K12')),
+         `% FRL` = perc_frl) %>% 
+  lmertree(
+     formula = 
+       harsh_ps ~ 1 | 
+       (1 | district/`School Type`) | 
+       total +
+       `School Type` + 
+       `% Black` + 
+       perc_hisp + 
+       perc_migrant + 
+       perc_esol + 
+       `% FRL` +
+       d_black + 
+       d_hisp + 
+       d_migrant + 
+       d_esol + 
+       d_frl, 
+     alpha = 0.001, 
+     bonferroni = T, 
+     cluster = district,
+     minsize = 230)
+
+p1 <- lmertree_TA$tree[1]
+
+```
+
+### First
+
+```{r}
+ggparty(p1) +
+  geom_edge() +
+  geom_edge_label() +
+  geom_node_label(aes(label = splitvar), 
+                  ids = "inner") +
+  geom_node_plot(gglist = list(
+    geom_boxplot(aes(y = harsh_ps, 
+                     color = `School Type`))))
+```
+
+### Second
+
+```{r}
+ggparty(p1) +
+  geom_edge() +
+  geom_edge_label() +
+  geom_node_label(aes(label = splitvar), 
+                  ids = "inner") +
+  geom_node_plot(gglist = list(
+    geom_boxplot(aes(y = harsh_ps, 
+                     color = `School Type`)), 
+    labs(y = 'Punishments/Student'),
+    theme_minimal(),
+    theme(axis.text.x = element_blank(), 
+          axis.ticks.x = element_blank(), 
+          axis.line.x = element_line(size = 1.5), 
+          axis.line.y = element_line(size = 1.5), 
+          panel.grid.minor.x = element_blank(), 
+          panel.grid.major.x = element_blank()))) +
+  labs(title = 'Mixed Effects Regression Tree of Harsh Punishments per Students')
+```
+
+### Third
+
+```{r}
+ggparty(p1) +
+  geom_edge() +
+  geom_edge_label() +
+  geom_node_label(aes(label = splitvar), 
+                  ids = "inner") +
+  geom_node_plot(gglist = list(
+    geom_boxplot(aes(y = harsh_ps, 
+                     color = `School Type`)), 
+    labs(y = 'Punishments/Student'),
+    theme_minimal(),
+    theme(axis.text.x = element_blank(), 
+          axis.ticks.x = element_blank(), 
+          axis.line.x = element_line(size = 1.5), 
+          axis.line.y = element_line(size = 1.5), 
+          panel.grid.minor.x = element_blank(), 
+          panel.grid.major.x = element_blank()),
+    lims(y = c(0, 1.5))), 
+    shared_axis_labels = T) +
+  geom_node_label(
+    line_list = list(aes(label = paste('N = ' , nodesize)),
+                     aes(label = splitvar),
+                     aes(label = p.value)),
+    # set graphical parameters for each line
+    line_gpar = list(
+      list(size = 7,
+        col = "black",
+        fontface = "bold"),
+      list(size = 11),
+      list(size = 7)),
+    ids = "inner") +
+  labs(title = 'Mixed Effects Regression Tree of Harsh Punishments per Students')
+```
+
+### Final
+
+Omitted to keep file under GitHub file size limit. See github for [final](https://chhr1s.github.io/GA_DOE_Public/index.html).
